@@ -1,0 +1,4 @@
+python /home/zhuominc/MGP3/RULER2/RULER/scripts/data/synthetic/niah.py         --save_dir  dataset/llama3-8b-chat-128k/synthetic/32768/data         --save_name niah_single_1         --subset validation         --tokenizer_path meta-llama/Meta-Llama-3.1-8B-Instruct         --tokenizer_type hf         --max_seq_length 32768         --tokens_to_generate 128         --num_samples 1         --random_seed 42         --type_haystack repeat --type_needle_k words --type_needle_v numbers --num_needle_k 1 --num_needle_v 1 --num_needle_q 1                           --template "[INST] Some special magic {type_needle_v} are hidden within the following text. Make sure to memorize it. I will quiz you about the {type_needle_v} afterwards.
+{context}
+What are all the special magic {type_needle_v} for {query} mentioned in the provided text? [/INST] The special magic {type_needle_v} for {query} mentioned in the provided text are"
+        
