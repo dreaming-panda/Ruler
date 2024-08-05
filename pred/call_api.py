@@ -222,12 +222,9 @@ def main():
     llm = get_llm(config['tokens_to_generate'])
     
     def get_output(idx, index, input, outputs, others, truncation, length):
-        while True:
-            try:
-                pred = llm(prompt=input)
-                break
-            except Exception as e:
-                traceback.print_exc()
+        
+        pred = llm(prompt=input)
+
 
         if len(pred['text']) > 0:
             outputs_parallel[idx] = {
@@ -245,35 +242,26 @@ def main():
     # setting buffering=1 to force to dump the output after every line, so that we can see intermediate generations
     with open(pred_file, 'at', encoding="utf-8", buffering=1) as fout:
         for idx, data_point in tqdm(enumerate(data), total=len(data)):
-            thread = threading.Thread(
-                target=get_output,
-                kwargs=dict(
-                    idx=idx,
+
+            get_output(idx=idx,
                     index=data_point['index'],
                     input=data_point['input'],
                     outputs=data_point['outputs'],
                     others=data_point.get('others', {}),
                     truncation=data_point.get('truncation', -1),
-                    length=data_point.get('length', -1),
-                ),
-            )
-            thread.start()
-            threads.append(thread)
-            if len(threads) == args.threads:
-                for thread in threads:
-                    thread.join()
-                threads = []
-                for computed_idx in range(idx - args.threads + 1, idx + 1):
-                    if len(outputs_parallel[computed_idx]) > 0:
-                        fout.write(json.dumps(outputs_parallel[computed_idx]) + '\n')
+                    length=data_point.get('length', -1))
+            
+            
+            if len(outputs_parallel[idx]) > 0:
+                        fout.write(json.dumps(outputs_parallel[idx]) + '\n')
 
         # collecting the final batch
-        if len(data) > 0:
-            for thread in threads:
-                thread.join()
-            for computed_idx in range(idx - len(threads) + 1, idx + 1):
-                if len(outputs_parallel[computed_idx]) > 0:
-                    fout.write(json.dumps(outputs_parallel[computed_idx]) + '\n')
+        # if len(data) > 0:
+        #     for thread in threads:
+        #         thread.join()
+        #     for computed_idx in range(idx - len(threads) + 1, idx + 1):
+        #         if len(outputs_parallel[computed_idx]) > 0:
+        #             fout.write(json.dumps(outputs_parallel[computed_idx]) + '\n')
 
     print(f"Used time: {round((time.time() - start_time) / 60, 1)} minutes")
 if __name__ == '__main__':

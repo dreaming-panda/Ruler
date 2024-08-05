@@ -17,28 +17,28 @@ import logging
 import requests
 import torch
 from typing import Dict, List, Optional
-CHUNK_SIZE = 4096
+CHUNK_SIZE = 1024
 
 class HuggingFaceModel:
     def __init__(self, name_or_path: str, **generation_kwargs) -> None:
         from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
-        from transformers import LlamaForCausalLM
+        from llama_sim_new import LlamaForCausalLM
         self.tokenizer = AutoTokenizer.from_pretrained(name_or_path, trust_remote_code=True)
 
         if 'Yarn-Llama' in name_or_path:
             model_kwargs = None
         else:
-            model_kwargs = {"attn_implementation": "flash_attention_2"}
+            model_kwargs = {"attn_implementation": "eager"}
         
         
         self.pipeline = None
-        self.model = LlamaForCausalLM.from_pretrained(name_or_path, trust_remote_code=True, device_map="auto", torch_dtype=torch.bfloat16, **model_kwargs)
-        # self.model.config.K = 12
-        # self.model.config.L = 300
-        # self.model.config.window = 16
-        # self.model.config.cache_mode = "anns"
-        # self.model.eval()
-        # self.model.set_sparse_attn(sparse=0.01, window_size=16, kernel_size=5, random_sparse=0.1, vsparse=1.0)
+        self.model :LlamaForCausalLM = LlamaForCausalLM.from_pretrained(name_or_path, trust_remote_code=True, device_map="auto", torch_dtype=torch.bfloat16, **model_kwargs)
+        self.model.config.K = 11
+        self.model.config.L = 150
+        self.model.config.window = 32
+        self.model.config.cache_mode = "anns"
+        self.model.eval()
+        self.model.set_sparse_attn(sparse=0.1, window_size=32, kernel_size=5, random_sparse=0.1, vsparse=1.0)
     
         # from snapkv.monkeypatch.monkeypatch import replace_llama, replace_mistral, replace_mixtral
         # replace_llama()
@@ -57,23 +57,29 @@ class HuggingFaceModel:
 
     def __call__(self, prompt: str, **kwargs) -> Dict[str, List[str]]:
         if self.pipeline is None:
-            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+            inputs = self.tokenizer(prompt, return_tensors="pt").to("cuda:0")
             seq_len = inputs["input_ids"].shape[1]
             num_chunk = (seq_len // CHUNK_SIZE - 1) if (seq_len % CHUNK_SIZE == 0) else (seq_len // CHUNK_SIZE)
             past_key_values = None
+            self.model.select_kv(False)
             with torch.inference_mode():
                 for chunk_id in range(num_chunk):
                     outputs = self.model(input_ids=inputs["input_ids"][:,chunk_id * CHUNK_SIZE : (chunk_id + 1) * CHUNK_SIZE],
+                                         attention_mask = inputs["attention_mask"][:,: (chunk_id + 1) * CHUNK_SIZE],
                                         past_key_values=past_key_values,
                                         use_cache=True)
                     past_key_values = outputs.past_key_values
             input_ids = inputs["input_ids"]
-
+            attention_mask = inputs["attention_mask"]
+            self.model.select_kv(True)
+            
             output = self.model.generate(
                 input_ids=input_ids,
+                attention_mask=attention_mask,
                 past_key_values=past_key_values,
                 **self.generation_kwargs
             )
+            self.model.select_kv(False)
             generated_text = self.tokenizer.decode(output[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
         else:
             output = self.pipeline(text_inputs=prompt, **self.generation_kwargs,)
