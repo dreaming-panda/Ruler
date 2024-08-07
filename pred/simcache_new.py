@@ -44,7 +44,7 @@ class SimCache(Cache):
         self.device = device
         self.dtype = dtype
         self.chunk_size = 8
-        self.hash_matrix = torch.randn((1, self.num_qh, self.head_dim + 1, self.K * self.L), device=self.device, dtype=self.dtype)
+        self.hash_matrix = [torch.randn((1, self.num_qh, self.head_dim + 1, self.K * self.L), device=self.device, dtype=self.dtype) for i in range(2)]
     def __getitem__(self, layer_idx: int) -> List[Tuple[torch.Tensor]]:
         """
         Support for backwards-compatible `past_key_value` indexing, e.g. `past_key_value[0][0].shape[2]` to get the
@@ -122,14 +122,16 @@ class SimCache(Cache):
                     return_value = torch.cat([self.selected_value_cache[layer_idx], self.unselected_value_cache[layer_idx]], dim=-2)
                     q = query_states / query_states.norm(p=2, dim=-1, keepdim=True)
                     #q = q.reshape(1, self.num_kh, self.num_qh // self.num_kh, self.head_dim)
-    
-                    q_hashcode = torch.matmul(q, self.hash_matrix[...,:-1,:].to(q.device)).reshape(1, self.num_qh, query_states.shape[2], self.L, self.K).gt(0)
+                    
+                    q_hashcode = torch.matmul(q, self.hash_matrix[layer_idx // 16][...,:-1,:].to(q.device)).reshape(1, self.num_qh, query_states.shape[2], self.L, self.K).gt(0)
 
                     
                     #k_hashcode = self.key_hashcode[layer_idx].repeat(1, self.num_qh//self.num_kh, 1, 1, 1)
                     k_hashcode = self.key_hashcode[layer_idx]
-                    mask = ((q_hashcode == k_hashcode).int().sum(dim=-1) == self.K).int().sum(dim=-1) > 0
+                    
+                    mask = ((q_hashcode == k_hashcode).int().sum(dim=-1) == self.K).int().sum(dim=-1) >= 2
 
+                    
                     
                     mask = mask.unsqueeze(-2)
                     # num_chunk = (mask.shape[-1] // self.chunk_size - 1) if (mask.shape[-1] % self.chunk_size) else (mask.shape[-1] // self.chunk_size ) 
@@ -186,8 +188,8 @@ class SimCache(Cache):
                     theta = torch.arccos(cos_similarity)
                     
                     weight = 1 - theta / torch.pi
-                    weight = 1 - (1 - weight**self.K)**self.L
-                    
+                    #weight = 1 - (1 - weight**self.K)**self.L
+                    weight = 1 - (1 - weight**self.K)**self.L - self.L * ((1 - weight**self.K)**(self.L - 1)) * (weight**self.K)
                     
                     # weight = weight.reshape(1, self.num_kh, self.num_qh // self.num_kh, 1, -1)
                     # weight = 1 - weight
@@ -197,7 +199,8 @@ class SimCache(Cache):
                     
                     
                     # weight = repeat_kv(weight, self.num_qh // self.num_kh)
-                    attn_unselected = attn_unselected - torch.log(weight + 1e-4)
+                    #weight.masked_fill_(weight<0.1, 1.0)
+                    #attn_unselected = attn_unselected - torch.log(weight + 1e-4)
                     attn_weights = torch.cat([attn_selected, attn_unselected], dim=-1)
                     
                     attn_weights = F.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
@@ -292,7 +295,7 @@ class SimCache(Cache):
         
         expand_k = expand_k - expand_k.mean(dim=-2, keepdim=True)
         
-        #expand_k = unselect_k_cache - unselect_k_cache.mean(dim=-2, keepdim=True)
+        
         expand_k_norm = expand_k.norm(p=2, dim=-1)
         
         expand_k_norm_max = expand_k_norm.max(dim=-1, keepdim=True).values + 1e-5
@@ -304,7 +307,7 @@ class SimCache(Cache):
         
         self.expand_key.append(expand_k)
         
-        hash_code = torch.matmul(expand_k, self.hash_matrix.to(expand_k.device)).reshape(1, self.num_qh, expand_k.shape[2], self.L, self.K)
+        hash_code = torch.matmul(expand_k, self.hash_matrix[layer_idx // 16].to(expand_k.device)).reshape(1, self.num_qh, expand_k.shape[2], self.L, self.K)
      
         hash_code.gt_(0)
         

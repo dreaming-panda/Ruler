@@ -24,7 +24,7 @@ fi
 
 # Root Directories
 # GPUS="6,7,8,9" # GPU size for tensor_parallel.
-export CUDA_VISIBLE_DEVICES=1,2,3,4
+export CUDA_VISIBLE_DEVICES=1,2,3,4,5,6,7,8
 ROOT_DIR="./dataset" # the path that stores generated task samples and model predictions. 
 MODEL_DIR="" # the path that contains individual model folders from HUggingface.
 ENGINE_DIR="" # the path that contains individual engine folders from TensorRT-LLM.

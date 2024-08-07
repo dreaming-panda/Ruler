@@ -237,7 +237,7 @@ def main():
                 'length': length,
             }
 
-    threads = []
+    
     outputs_parallel = [{} for _ in range(len(data))]
     # setting buffering=1 to force to dump the output after every line, so that we can see intermediate generations
     with open(pred_file, 'at', encoding="utf-8", buffering=1) as fout:
